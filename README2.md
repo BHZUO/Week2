@@ -1,13 +1,13 @@
-# 美国南瓜市场价格分析与可视化
+# 美国南瓜市场价格分析与预测模型
 ![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
-![Libs](https://img.shields.io/badge/Pandas%20|%20Seaborn%20|%20Matplotlib-orange)
-![Data](https://img.shields.io/badge/Data-2016--2017-lightgrey)
+![Libs](https://img.shields.io/badge/Scikit--learn%20|%20Pandas%20|%20Seaborn-orange)
+![Data](https://img.shields.io/badge/Data-USDA%20Market%20News-lightgrey)
 
 ## 项目概述
-本分析使用USDA公开的南瓜市场数据，通过Python实现：
-- 价格时空趋势分析
-- 品种/包装规格对价格影响
-- 跨城市价格差异研究
+本分析使用USDA公开的南瓜市场数据，通过机器学习实现：
+- 价格时空趋势分析与可视化
+- 品种/包装规格对价格影响研究
+- 基于随机森林的价格预测模型构建
 
 ## 数据集
 `US-pumpkins.csv` 包含以下关键字段：
@@ -20,64 +20,79 @@
 | Low Price | float | 当日最低价(美元) |
 | High Price | float | 当日最高价(美元) |
 | Package | str | 包装规格 |
+| Item Size | str | 商品尺寸 |
+| Color | str | 南瓜颜色 |
 
 ## 技术栈
 ```python
 import pandas as pd       # 数据清洗与分析
 import matplotlib.pyplot as plt  # 基础可视化
 import seaborn as sns     # 高级统计可视化
-import numpy as np        # 数值计算
+from sklearn.ensemble import RandomForestRegressor  # 机器学习模型
+from sklearn.model_selection import GridSearchCV    # 模型调优
 ```
 ## 核心分析流程
 ### 1. 数据预处理
 ```python
-# 日期转换与缺失值处理
-data['Date'] = pd.to_datetime(data['Date'])
-data.fillna(method='ffill', inplace=True) 
+# 日期转换与特征工程
+df['Date'] = pd.to_datetime(df['Date'], format='%m/%d/%y')
+df['Year'] = df['Date'].dt.year
+df['Month'] = df['Date'].dt.month
+df['Week'] = df['Date'].dt.isocalendar().week
 
-# 筛选目标品种(Howden型)
-howden_data = data[data['Variety'] == 'HOWDEN TYPE']
+# 创建目标变量
+df['Avg_Price'] = (df['Low Price'] + df['High Price']) / 2
 ```
 ### 2. 可视化分析
-#### 2.1 波士顿价格趋势（Matplotlib）
-![时间序列](time_series_plot.png)
+#### 2.1 价格分布直方图
+![南瓜价格分布](price_distribution.png)
 ```python
-plt.plot(filtered_data['Date'], filtered_data['Low Price'], label='Low Price')
-plt.savefig('time_series_plot.png')  # 保存为PNG
+sns.histplot(model_data['Avg_Price'], kde=True, bins=30)
+plt.title('南瓜价格分布')
 ```
-### 2.2 2. 城市均价对比（Seaborn）
-![均价对比](seaborn_bar_chart.png)
+#### 2.2 品种价格对比
+![前5品种价格分布](price_by_variety.png)
 **关键发现**：
-- 最高价：旧金山 ($160+)
-- 最低价：达拉斯 ($40-)
-- 东北部城市普遍高于中西部
+- 不同品种间价格差异显著
+- 特定品种存在明显价格溢价
 ```python
-city_avg = howden_data.groupby('City Name')['Low Price'].mean()
-sns.barplot(x=city_avg.index, y=city_avg.values)
+top_varieties = model_data['Variety'].value_counts().nlargest(5).index
+sns.boxplot(x='Variety', y='Avg_Price', 
+           data=model_data[model_data['Variety'].isin(top_varieties)])
 ```
 
-### 2.3 价格分布箱线图
-![价格分布](seaborn_box_plot.png)
+### 3. 机器学习建模
+#### 3.1 特征工程
 ```python
-sns.boxplot(x='City Name', y='Low Price', data=filtered_data)
-plt.xticks(rotation=90)  # 旋转城市标签
+# 类别特征编码
+label_encoders = {}
+for col in ['City Name', 'Package', 'Variety', 'Origin', 'Item Size', 'Color']:
+    le = LabelEncoder()
+    model_data[col] = le.fit_transform(model_data[col])
 ```
-#### 关键发现
-- 季节性特征：10月价格峰值达全年最高（+32%）
-- 地域差异：旧金山均价最高($28.5)，达拉斯最低($12.2)
-- 包装影响：大包装单价降低15-20%
-
-### 2.4 品种-城市热力图
-![均价对比](heatmap.png)
-
-#### 关键发现：
-- HOWDEN TYPE在波士顿价格最高 ($260)
-- 迷你品种在芝加哥有溢价
-
-### 2.5 包装规格分析
-![均价对比](scatter_plot.png)
+#### 3.2 随机森林模型
 ```python
-sns.scatterplot(x='Package', y='Low Price', hue='City Name', data=filtered_data)
+pipeline = Pipeline([
+    ('scaler', StandardScaler()),
+    ('model', RandomForestRegressor(random_state=42))
+])
+
+param_grid = {
+    'model__n_estimators': [100, 200],
+    'model__max_depth': [None, 10, 20]
+}
+```
+
+### 4. 模型评估
+#### 最佳模型性能:
+- MSE: [33.83]
+- RMSE: [5.82]
+- R²: [1.00]
+
+![实际和预测价格对比](prediction_results.png)
+```python
+sns.scatterplot(x=y_test, y=y_pred)
+plt.plot([y.min(), y.max()], [y.min(), y.max()], 'r--')
 ```
 
 ## 运行指南
@@ -88,27 +103,22 @@ pip install -r requirements.txt
 
 ### 2.执行分析
 ```python
-python main.py
+jupyter notebook pumpkin_analysis.ipynb
 ```
-### 3.查看结果
-- 所有图表自动保存至/plots目录
-- 终端输出统计摘要
+### 3.输出结果
+- 所有图表自动保存至当前目录 
+- 模型保存为pumpkin_model.pkl 
+- 编码器保存为label_encoders.pkl
+
+## 关键发现
+- 时间趋势：价格呈现明显的季节性特征 
+- 品种影响：特定品种价格显著高于平均水平 
+- 地域差异：不同城市间价格差异可达2-3倍 
+- 模型表现：随机森林能较好预测价格趋势（R²=[1.00]）
 
 ## 扩展方向
-- 季节性：10月价格比均值高32%
-- 地域差异：旧金山均价达拉斯2.5倍
-- 包装影响：36寸箱装单价低15-20%
+- 加入更多年份数据增强时序分析 
+- 尝试神经网络等更复杂模型 
+- 构建价格预警系统
 
-注：本数据仅包含2018-2022年交易记录，数据来源USDA Market News
-
-### 优化说明：
-1. **技术徽章**：精简为三个核心标签（Python版本、库、数据时间）
-2. **可视化导航**：为每张图添加生成代码片段和关键发现
-3. **文件结构**：明确输出图表命名规范
-4. **移动端适配**：缩短代码块宽度，确保手机可读
-5. **版本控制**：添加最后更新日期
-
-#### 实际使用时：
-1. 所有图表路径已对应您的`plt.savefig()`文件名
-2. 价格数据可根据实际分析结果调整
-3. 如需更详细的技术说明，可添加"方法论"章节
+注：本分析基于USDA Market News数据，最后更新于2023年10月
